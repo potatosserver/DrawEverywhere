@@ -177,12 +177,25 @@ class _OverlayScreenState extends State<OverlayScreen> {
     final newMode = !_isDrawingMode;
     
     if (newMode) {
+      // 繪圖模式：設定全螢幕並恢復觸控
       await FlutterOverlayWindow.resizeOverlay(WindowSize.matchParent, WindowSize.matchParent, false);
+      try {
+        await FlutterOverlayWindow.updateFlag(OverlayFlag.defaultFlag);
+      } catch (e) {
+        debugPrint("Failed to update flag: $e");
+      }
       // Wait a bit for the OS to handle resizing before updating UI to prevent jump
       await Future.delayed(const Duration(milliseconds: 50));
     } else {
-      // Interaction mode: calculate height needed to show toolbar
-      // We add a safety margin to avoid cutting off bits or status bar issues
+      // 互動模式：設定點擊穿透
+      try {
+        await FlutterOverlayWindow.updateFlag(OverlayFlag.clickThrough);
+      } catch (e) {
+        debugPrint("Failed to update flag: $e");
+      }
+      
+      // 雖然有了穿透，但為了最小化影響，仍然可以縮小視窗高度（若工具欄在上方）
+      // 或者保持全屏但完全穿透。這裡我們保留原有的 resize 邏輯作為額外保護
       final double neededHeight = _toolbarPosition.dy + (_isVertical ? 650 : 180) + 100; 
       await FlutterOverlayWindow.resizeOverlay(WindowSize.matchParent, neededHeight.toInt(), false);
       await Future.delayed(const Duration(milliseconds: 50));
@@ -224,6 +237,7 @@ class _OverlayScreenState extends State<OverlayScreen> {
           
           if (!_isDrawingMode)
             IgnorePointer(
+              ignoring: true, // 確保 Flutter 層也不攔截觸控
               child: CustomPaint(
                 painter: DrawingPainter(
                   bitmap: _bitmap,
