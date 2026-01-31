@@ -177,27 +177,33 @@ class _OverlayScreenState extends State<OverlayScreen> {
     final newMode = !_isDrawingMode;
     
     if (newMode) {
-      // 繪圖模式：設定全螢幕並恢復觸控
+      // 繪圖模式：恢復全螢幕，並將視窗移回原點 (0,0)
+      await FlutterOverlayWindow.moveOverlay(const OverlayPosition(0, 0));
       await FlutterOverlayWindow.resizeOverlay(WindowSize.matchParent, WindowSize.matchParent, false);
       try {
         await FlutterOverlayWindow.updateFlag(OverlayFlag.defaultFlag);
       } catch (e) {
         debugPrint("Failed to update flag: $e");
       }
-      // Wait a bit for the OS to handle resizing before updating UI to prevent jump
       await Future.delayed(const Duration(milliseconds: 50));
     } else {
-      // 互動模式：設定點擊穿透
+      // 互動模式：
+      // 1. 移除穿透 Flag，改用縮小視窗範圍來達成穿透
       try {
-        await FlutterOverlayWindow.updateFlag(OverlayFlag.clickThrough);
+        await FlutterOverlayWindow.updateFlag(OverlayFlag.defaultFlag);
       } catch (e) {
         debugPrint("Failed to update flag: $e");
       }
       
-      // 雖然有了穿透，但為了最小化影響，仍然可以縮小視窗高度（若工具欄在上方）
-      // 或者保持全屏但完全穿透。這裡我們保留原有的 resize 邏輯作為額外保護
-      final double neededHeight = _toolbarPosition.dy + (_isVertical ? 650 : 180) + 100; 
-      await FlutterOverlayWindow.resizeOverlay(WindowSize.matchParent, neededHeight.toInt(), false);
+      // 2. 計算工具列的大小
+      final double width = _isVertical ? 70 : (_isMinimized ? 70 : 500);
+      final double height = _isVertical ? (_isMinimized ? 70 : 650) : 70;
+      
+      // 3. 移動視窗到工具列位置，並調整大小
+      // 注意：Flutter 坐標與 Android 視窗坐標可能需要適配，這裡先嘗試將視窗重心移至工具列
+      await FlutterOverlayWindow.moveOverlay(OverlayPosition(_toolbarPosition.dx, _toolbarPosition.dy));
+      await FlutterOverlayWindow.resizeOverlay(width.toInt(), height.toInt(), false);
+      
       await Future.delayed(const Duration(milliseconds: 50));
     }
     
@@ -205,6 +211,13 @@ class _OverlayScreenState extends State<OverlayScreen> {
       setState(() {
         _isDrawingMode = newMode;
       });
+    }
+  }
+
+  // 輔助方法：當工具列位置改變且在互動模式時，需要同步移動視窗
+  Future<void> _syncWindowPosition() async {
+    if (!_isDrawingMode) {
+        await FlutterOverlayWindow.moveOverlay(OverlayPosition(_toolbarPosition.dx, _toolbarPosition.dy));
     }
   }
 
@@ -230,14 +243,14 @@ class _OverlayScreenState extends State<OverlayScreen> {
                     currentColor: _currentColor,
                     currentWidth: _currentWidth,
                   ),
-                  size: _screenSize, // Stabilize with fixed screen size
+                  size: _screenSize,
                 ),
               ),
             ),
           
           if (!_isDrawingMode)
             IgnorePointer(
-              ignoring: true, // 確保 Flutter 層也不攔截觸控
+              ignoring: true,
               child: CustomPaint(
                 painter: DrawingPainter(
                   bitmap: _bitmap,
@@ -246,14 +259,14 @@ class _OverlayScreenState extends State<OverlayScreen> {
                   currentColor: _currentColor,
                   currentWidth: _currentWidth,
                 ),
-                size: _screenSize, // Stabilize with fixed screen size
+                size: _screenSize,
               ),
             ),
 
           // Toolbar / Bubble
           Positioned(
-            left: _toolbarPosition.dx,
-            top: _toolbarPosition.dy,
+            left: _isDrawingMode ? _toolbarPosition.dx : 0,
+            top: _isDrawingMode ? _toolbarPosition.dy : 0,
             child: GestureDetector(
               onLongPressStart: (details) {
                 setState(() => _isDragging = true);
@@ -263,6 +276,7 @@ class _OverlayScreenState extends State<OverlayScreen> {
                   setState(() {
                     _toolbarPosition += details.delta;
                   });
+                  _syncWindowPosition();
                 }
               },
               onPanEnd: (details) {
@@ -297,13 +311,14 @@ class _OverlayScreenState extends State<OverlayScreen> {
           child: InkWell(
             borderRadius: BorderRadius.circular(30),
             onTap: () async {
+              setState(() => _isMinimized = false);
               if (_isDrawingMode) {
                 await FlutterOverlayWindow.resizeOverlay(WindowSize.matchParent, WindowSize.matchParent, false);
               } else {
-                final double neededHeight = _toolbarPosition.dy + (_isVertical ? 650 : 150);
-                await FlutterOverlayWindow.resizeOverlay(WindowSize.matchParent, neededHeight.toInt(), false);
+                final double width = _isVertical ? 70 : 500;
+                final double height = _isVertical ? 650 : 70;
+                await FlutterOverlayWindow.resizeOverlay(width.toInt(), height.toInt(), false);
               }
-              setState(() => _isMinimized = false);
             },
             child: const Icon(Icons.visibility, color: Colors.blue, size: 32),
           ),
@@ -316,23 +331,20 @@ class _OverlayScreenState extends State<OverlayScreen> {
         _isMinimized ? Icons.visibility_off : Icons.visibility,
         () async {
           final newState = !_isMinimized;
+          setState(() => _isMinimized = newState);
           if (newState) {
-            // When minimizing, we don't necessarily need to resize the window small,
-            // but if we want to allow interaction behind, we should.
-            // For "upward collapse", we just hide other buttons.
             if (!_isDrawingMode) {
-                final double neededHeight = _toolbarPosition.dy + 100; // Just enough for eye button
-                await FlutterOverlayWindow.resizeOverlay(WindowSize.matchParent, neededHeight.toInt(), false);
+                await FlutterOverlayWindow.resizeOverlay(70, 70, false);
             }
           } else {
             if (_isDrawingMode) {
               await FlutterOverlayWindow.resizeOverlay(WindowSize.matchParent, WindowSize.matchParent, false);
             } else {
-              final double neededHeight = _toolbarPosition.dy + (_isVertical ? 650 : 150);
-              await FlutterOverlayWindow.resizeOverlay(WindowSize.matchParent, neededHeight.toInt(), false);
+              final double width = _isVertical ? 70 : 500;
+              final double height = _isVertical ? 650 : 70;
+              await FlutterOverlayWindow.resizeOverlay(width.toInt(), height.toInt(), false);
             }
           }
-          setState(() => _isMinimized = newState);
         },
         color: Colors.blue,
       ),
