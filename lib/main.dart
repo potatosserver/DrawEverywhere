@@ -122,18 +122,6 @@ class _InitializationScreenState extends State<InitializationScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
-      backgroundColor: Colors.white,
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 20),
-            Text('正在啟動螢幕畫筆...', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          ],
-        ),
-      ),
-    );
+    return const SizedBox.shrink();
   }
 }

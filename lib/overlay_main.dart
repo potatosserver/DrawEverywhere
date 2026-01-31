@@ -48,7 +48,8 @@ class _OverlayScreenState extends State<OverlayScreen> {
     Future.microtask(() {
       if (mounted) {
         final size = MediaQuery.of(context).size;
-        if (size.width > 0 && size.height > 0) {
+        // Only capture screen size when it's likely the full screen (not resized)
+        if (size.width > 0 && size.height > 1000) {
           setState(() {
             _screenSize = size;
           });
@@ -174,19 +175,24 @@ class _OverlayScreenState extends State<OverlayScreen> {
 
   Future<void> _toggleDrawingMode() async {
     final newMode = !_isDrawingMode;
+    
     if (newMode) {
       await FlutterOverlayWindow.resizeOverlay(WindowSize.matchParent, WindowSize.matchParent, false);
+      // Wait a bit for the OS to handle resizing before updating UI to prevent jump
+      await Future.delayed(const Duration(milliseconds: 50));
     } else {
       // Interaction mode: calculate height needed to show toolbar
-      // Height should be at least (top position + toolbar height)
-      // Since it's a Column/Row, we'll estimate the max height.
-      // Vertical toolbar can be up to ~600px, Horizontal ~100px.
-      final double neededHeight = _toolbarPosition.dy + (_isVertical ? 650 : 150);
-      await FlutterOverlayWindow.resizeOverlay(WindowSize.matchParent, neededHeight.toInt(), false); 
+      // We add a safety margin to avoid cutting off bits or status bar issues
+      final double neededHeight = _toolbarPosition.dy + (_isVertical ? 650 : 180) + 100; 
+      await FlutterOverlayWindow.resizeOverlay(WindowSize.matchParent, neededHeight.toInt(), false);
+      await Future.delayed(const Duration(milliseconds: 50));
     }
-    setState(() {
-      _isDrawingMode = newMode;
-    });
+    
+    if (mounted) {
+      setState(() {
+        _isDrawingMode = newMode;
+      });
+    }
   }
 
   @override
@@ -366,42 +372,48 @@ class _OverlayScreenState extends State<OverlayScreen> {
         ],
         border: Border.all(color: Colors.white.withOpacity(0.8)),
       ),
-      child: IntrinsicWidth(
-        child: IntrinsicHeight(
-          child: _isVertical
-              ? Column(mainAxisSize: MainAxisSize.min, children: children)
-              : Row(mainAxisSize: MainAxisSize.min, children: children),
-        ),
-      ),
+      child: _isVertical
+          ? Column(mainAxisSize: MainAxisSize.min, children: children)
+          : Row(mainAxisSize: MainAxisSize.min, children: children),
     );
   }
 
   Widget _iconButton(IconData icon, VoidCallback onPressed, {Color? color}) {
-    return IconButton(
-      icon: Icon(icon, color: color ?? Colors.grey.shade700, size: 28),
-      onPressed: onPressed,
-      style: IconButton.styleFrom(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    return SizedBox(
+      width: 48,
+      height: 48,
+      child: IconButton(
+        icon: Icon(icon, color: color ?? Colors.grey.shade700, size: 28),
+        onPressed: onPressed,
+        style: IconButton.styleFrom(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          padding: EdgeInsets.zero,
+        ),
       ),
     );
   }
 
   Widget _toolbarAction(IconData icon, DrawingTool tool, String tooltip) {
     final isSelected = _currentTool == tool && _isDrawingMode;
-    return IconButton(
-      icon: Icon(
-        icon,
-        color: isSelected ? Colors.blue.shade600 : Colors.grey.shade700,
-        size: 28,
-      ),
-      onPressed: () {
-        if (!_isDrawingMode) _toggleDrawingMode();
-        setState(() => _currentTool = tool);
-      },
-      tooltip: tooltip,
-      style: IconButton.styleFrom(
-        backgroundColor: isSelected ? Colors.blue.withOpacity(0.1) : Colors.transparent,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    return SizedBox(
+      width: 48,
+      height: 48,
+      child: IconButton(
+        icon: Icon(
+          icon,
+          color: isSelected ? Colors.blue.shade600 : Colors.grey.shade700,
+          size: 28,
+        ),
+        onPressed: () {
+          if (!_isDrawingMode) _toggleDrawingMode();
+          setState(() => _currentTool = tool);
+        },
+        tooltip: tooltip,
+        style: IconButton.styleFrom(
+          backgroundColor: isSelected ? Colors.blue.withOpacity(0.1) : Colors.transparent,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          padding: EdgeInsets.zero,
+        ),
       ),
     );
   }
