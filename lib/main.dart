@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart' as ft;
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -20,6 +21,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Draw Everywhere',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
@@ -51,41 +53,46 @@ class _InitializationScreenState extends State<InitializationScreen> {
     }
 
     if (!status) {
-      // Handle permission denied
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('需要懸浮視窗權限才能運行')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('需要懸浮視窗權限才能運行')),
+        );
       }
       return;
     }
 
-    // Check foreground service permission (Android 14+)
+    // Check notification permission (for foreground service)
     if (await Permission.notification.request().isGranted) {
-      // Start service and overlay
-      await _startService();
-      await FlutterOverlayWindow.showOverlay(
-        enableDrag: false,
-        flag: OverlayFlag.clickThrough,
-        alignment: OverlayAlignment.center,
-        visibility: NotificationVisibility.visibilityPublic,
-        positionGravity: PositionGravity.right, // Use a valid gravity
-        height: WindowSize.matchParent,
-        width: WindowSize.matchParent,
-      );
-
-      // Close the main activity since user doesn't want a home screen
-      // SystemNavigator.pop(); // This might kill the app, let's just minimize or show a simple UI
+       await _startService();
+       
+       // Show overlay - ensure it is NOT click-through by default so we can draw
+       await FlutterOverlayWindow.showOverlay(
+         enableDrag: false,
+         flag: OverlayFlag.defaultFlag, // Allow touches for drawing
+         alignment: OverlayAlignment.topLeft,
+         visibility: NotificationVisibility.visibilityPublic,
+         positionGravity: PositionGravity.right,
+         height: WindowSize.matchParent,
+         width: WindowSize.matchParent,
+       );
+       
+       // Hide the main activity to fulfill "no main screen" requirement
+       if (mounted) {
+         try {
+           const MethodChannel('flutter.native/helper').invokeMethod('moveTaskToBack');
+         } catch (e) {
+           SystemNavigator.pop();
+         }
+       }
     }
   }
 
   Future<void> _startService() async {
     ft.FlutterForegroundTask.init(
       androidNotificationOptions: ft.AndroidNotificationOptions(
-        channelId: 'notification_channel_id',
-        channelName: 'Foreground Service Notification',
-        channelDescription:
-            'This notification appears when the foreground service is running.',
+        channelId: 'draw_service',
+        channelName: '螢幕畫筆服務',
+        channelDescription: '維持螢幕畫筆在背景運行',
         channelImportance: ft.NotificationChannelImportance.LOW,
         priority: ft.NotificationPriority.LOW,
         iconData: const ft.NotificationIconData(
@@ -106,28 +113,24 @@ class _InitializationScreenState extends State<InitializationScreen> {
         allowWifiLock: true,
       ),
     );
-
+    
     await ft.FlutterForegroundTask.startService(
       notificationTitle: '螢幕畫筆運行中',
-      notificationText: '點擊以開啟工具欄',
+      notificationText: '可以直接在螢幕上繪圖',
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return const Scaffold(
+      backgroundColor: Colors.white,
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const CircularProgressIndicator(),
-            const SizedBox(height: 20),
-            const Text('正在啟動螢幕畫筆...'),
-            const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: _checkPermissionsAndStart,
-              child: const Text('重新授權並啟動'),
-            ),
+            CircularProgressIndicator(),
+            SizedBox(height: 20),
+            Text('正在啟動螢幕畫筆...', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           ],
         ),
       ),

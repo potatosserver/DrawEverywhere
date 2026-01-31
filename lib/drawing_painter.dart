@@ -35,6 +35,7 @@ class DrawingPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     if (bitmap != null) {
+      // BACK TO 1:1 (No scaling)
       canvas.drawImage(bitmap!, Offset.zero, Paint());
     }
 
@@ -87,7 +88,6 @@ class DrawingPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant DrawingPainter oldDelegate) {
-    return oldDelegate.bitmap != bitmap ||
-        oldDelegate.currentPath != currentPath;
+    return true; // Force repaint for real-time drawing
   }
 }
